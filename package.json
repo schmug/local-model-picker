@@ -1,0 +1,14 @@
+{
+  "name": "local-model-picker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "pick": "bun src/pick-local-model.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "bun-types": "^1.4.3",
+    "typescript": "^7.0.2"
+  }
+}
