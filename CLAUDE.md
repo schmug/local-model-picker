@@ -17,6 +17,11 @@ core/cli/worker/web, Worker + cron behind Cloudflare Access).
 
 - CI job names `test` and `typecheck` are required status checks in the
   `main` ruleset. Renaming a job requires updating the ruleset in the same PR.
+- A PR that touches `.github/workflows/` stops for Schmug: open it, do not merge
+  it or enable auto-merge, and ask in chat. Reason: the ruleset's required checks
+  run the workflow from the PR head, so a PR can edit `ci.yml` to make its own
+  checks pass. Repo-level rulesets rejected a `workflows` rule pinning `ci.yml`
+  to main (HTTP 422, 2026-10-18), so this rule is the only gate on that path.
 - Never commit Artificial Analysis data (scores, snapshots, fixtures with real
   scores). AA Data Platform Terms §2.4 forbid redistributing raw Data and
   §2.5 forbid a public model-selection product. Test fixtures use synthetic scores.
