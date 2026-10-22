@@ -242,3 +242,58 @@ export function calibratedEfficiency(measuredTps: number, bandwidthGBs: number, 
   const bytesPerTok = (active * bpw) / 8 + kvBytes;
   return measuredTps / ((bandwidthGBs * 1e9) / bytesPerTok);
 }
+
+// ---------- calibration ----------
+
+/** Preset label (as in applePresets) for a detected chip, if the table knows it. */
+export function presetFor(chip: string, gpuCores: number): string | undefined {
+  const name = chip.replace(/^Apple\s+/, "").trim();
+  const v = APPLE_BANDWIDTH[name];
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? `${name} (${gpuCores > v[0] ? "full" : "binned"} GPU)` : name;
+}
+
+export interface BenchRun { model: string; sizeBytes: number; nParams: number; tps: number }
+
+/** The token-generation row of `llama-bench -o json` output (n_prompt 0, n_gen > 0). */
+export function parseLlamaBench(rows: any[]): BenchRun {
+  const tg = rows.find((r) => r.n_prompt === 0 && r.n_gen > 0);
+  if (!tg || !(tg.avg_ts > 0) || !(tg.model_size > 0) || !(tg.model_n_params > 0)) throw new Error("llama-bench output has no tg row (run with -p 0 -n 128)");
+  return { model: String(tg.model_type ?? tg.model_filename ?? "unknown"), sizeBytes: tg.model_size, nParams: tg.model_n_params, tps: tg.avg_ts };
+}
+
+export interface Calibration {
+  at: string; preset: string; bandwidthGBs: number; model: string;
+  sizeBytes: number; nParams: number; active: number; tps: number; efficiency: number;
+}
+
+/**
+ * Calibration from a bench run. The GGUF's own size gives effective bpw, so
+ * mixed-precision quants are exact; `active` < nParams for MoE models.
+ */
+export function calibrationFrom(run: BenchRun, preset: string, bandwidthGBs: number, active = run.nParams, at = new Date()): Calibration {
+  const bpw = (run.sizeBytes * 8) / run.nParams;
+  return { at: at.toISOString(), preset, bandwidthGBs, model: run.model, sizeBytes: run.sizeBytes, nParams: run.nParams, active, tps: run.tps,
+    efficiency: calibratedEfficiency(run.tps, bandwidthGBs, active, bpw) };
+}
+
+/** Validate an uploaded calibration: numbers in range, efficiency recomputed rather than trusted. */
+export function parseCalibration(body: any): Calibration {
+  const num = (k: string, max: number) => { const v = body?.[k]; if (typeof v !== "number" || !(v > 0) || v > max) throw new Error(`bad ${k}`); return v; };
+  const str = (k: string) => { const v = body?.[k]; if (typeof v !== "string" || !v || v.length > 120) throw new Error(`bad ${k}`); return v; };
+  const run = { model: str("model"), sizeBytes: num("sizeBytes", 2e12), nParams: num("nParams", 5e12), tps: num("tps", 1e4) };
+  const active = num("active", run.nParams);
+  const at = new Date(str("at"));
+  if (Number.isNaN(at.getTime())) throw new Error("bad at");
+  return calibrationFrom(run, str("preset"), num("bandwidthGBs", 1e4), active, at);
+}
+
+/** Median efficiency per preset, for the page to default to. */
+export function efficiencyByPreset(cals: Calibration[]): Record<string, number> {
+  const by: Record<string, number[]> = {};
+  for (const c of cals) (by[c.preset] ??= []).push(c.efficiency);
+  return Object.fromEntries(Object.entries(by).map(([k, v]) => {
+    const s = v.sort((a, b) => a - b), m = s.length >> 1;
+    return [k, s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2];
+  }));
+}

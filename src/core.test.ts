@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   activeParams, appleBandwidth, applePresets, bestPlan, calibratedEfficiency, configSubset, filterCandidates, kvCacheBytes, matchScore,
-  parseAaModels, rankModels, type SnapshotModel,
+  calibrationFrom, efficiencyByPreset, parseAaModels, parseCalibration, parseLlamaBench, presetFor, rankModels, type SnapshotModel,
 } from "./core";
 
 // Trimmed from the real config.json files on Hugging Face.
@@ -97,4 +97,26 @@ test("Apple presets: one per chip, Max chips split by GPU bin, matching appleBan
   expect(p.find((x) => x.label === "M4 Max (full GPU)")?.bandwidthGBs).toBe(appleBandwidth("Apple M4 Max", 40));
   expect(p.find((x) => x.label === "M4 Max (binned GPU)")?.bandwidthGBs).toBe(appleBandwidth("Apple M4 Max", 32));
   expect(p.find((x) => x.label === "M4 Pro")?.bandwidthGBs).toBe(273);
+});
+
+test("calibration: llama-bench tg row → efficiency, uploads re-validated, median per preset", () => {
+  // Synthetic llama-bench rows: a pp row to skip and a tg128 row.
+  const rows = [
+    { model_type: "qwen3moe 30B.A3B Q4_K - Medium", model_size: 18e9, model_n_params: 30e9, n_prompt: 512, n_gen: 0, avg_ts: 2000 },
+    { model_type: "qwen3moe 30B.A3B Q4_K - Medium", model_size: 18e9, model_n_params: 30e9, n_prompt: 0, n_gen: 128, avg_ts: 90 },
+  ];
+  const run = parseLlamaBench(rows);
+  expect(run.tps).toBe(90);
+  expect(presetFor("Apple M4 Max", 40)).toBe("M4 Max (full GPU)");
+  expect(presetFor("Apple M4 Pro", 20)).toBe("M4 Pro");
+  expect(presetFor("Intel Xeon", 0)).toBeUndefined();
+  const c = calibrationFrom(run, "M4 Max (full GPU)", 546, 3e9, new Date("2026-01-01T00:00:00Z"));
+  // 3B active × 4.8 bpw = 1.8 GB/token → ceiling 303 tok/s → 90 measured ≈ 0.297.
+  expect(c.efficiency).toBeCloseTo(90 / (546e9 / 1.8e9), 10);
+  expect(parseCalibration({ ...c, efficiency: 0.99 }).efficiency).toBe(c.efficiency);
+  expect(() => parseCalibration({ ...c, tps: -1 })).toThrow("bad tps");
+  expect(() => parseCalibration({ ...c, active: 31e9 })).toThrow("bad active");
+  expect(() => parseLlamaBench(rows.slice(0, 1))).toThrow();
+  expect(efficiencyByPreset([{ ...c, efficiency: 0.3 }, { ...c, efficiency: 0.5 }, { ...c, preset: "M4 Pro", efficiency: 0.4 }]))
+    .toEqual({ "M4 Max (full GPU)": 0.4, "M4 Pro": 0.4 });
 });

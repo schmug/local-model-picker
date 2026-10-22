@@ -1,16 +1,24 @@
 /** Dashboard: fetches the snapshot once, then ranks client-side with core on every control change. */
-import { applePresets, rankModels, type Ranked, type Snapshot } from "../src/core";
+import { applePresets, efficiencyByPreset, rankModels, type Calibration, type Ranked, type Snapshot } from "../src/core";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const inputs = { mem: $<HTMLInputElement>("mem"), bw: $<HTMLInputElement>("bw"), ctx: $<HTMLSelectElement>("ctx"), tps: $<HTMLInputElement>("tps"), eff: $<HTMLInputElement>("eff") };
 const preset = $<HTMLSelectElement>("preset");
 const TOP = 50;
 let snap: Snapshot | undefined;
+let measured: Record<string, number> = {};
 
 const presets = applePresets();
 preset.innerHTML = `<option value="">Manual</option>` + presets.map((p, i) => `<option value="${i}">${p.label} · ${p.bandwidthGBs} GB/s</option>`).join("");
 preset.value = String(presets.findIndex((p) => p.label === "M4 Max (full GPU)"));
-preset.onchange = () => { const p = presets[Number(preset.value)]; if (preset.value && p) inputs.bw.value = String(p.bandwidthGBs); render(); };
+/** Selecting a preset sets its bandwidth, and its measured efficiency when a calibration exists. */
+function applyPreset() {
+  const p = presets[Number(preset.value)];
+  if (!preset.value || !p) return;
+  inputs.bw.value = String(p.bandwidthGBs);
+  if (measured[p.label]) inputs.eff.value = measured[p.label].toFixed(2);
+}
+preset.onchange = () => { applyPreset(); render(); };
 inputs.bw.oninput = () => { preset.value = ""; render(); };
 for (const el of [inputs.mem, inputs.ctx, inputs.tps, inputs.eff]) el.oninput = render;
 
@@ -21,7 +29,8 @@ function render() {
   $("mem-out").textContent = `${inputs.mem.value} GB`;
   $("bw-out").textContent = `${inputs.bw.value} GB/s`;
   $("tps-out").textContent = `${inputs.tps.value} tok/s`;
-  $("eff-out").textContent = Number(inputs.eff.value).toFixed(2);
+  const m = measured[presets[Number(preset.value)]?.label ?? ""];
+  $("eff-out").textContent = Number(inputs.eff.value).toFixed(2) + (preset.value && m ? ` (measured ${m.toFixed(2)})` : "");
   if (!snap) return;
   const hw = { memBudgetGB: Number(inputs.mem.value), bandwidthGBs: Number(inputs.bw.value), label: preset.selectedOptions[0]?.textContent ?? "" };
   const o = { ctx: Number(inputs.ctx.value), minTps: Number(inputs.tps.value), efficiency: Number(inputs.eff.value) };
@@ -58,6 +67,7 @@ function chart(rows: Ranked[]) {
 }
 
 render();
+fetch("/api/calibration").then((r) => (r.ok ? r.json() : [])).then((cals: Calibration[]) => { measured = efficiencyByPreset(cals); applyPreset(); render(); }).catch(() => {});
 fetch("/api/snapshot").then(async (r) => {
   if (!r.ok) { $("status").textContent = `Snapshot unavailable: ${r.status} ${await r.text()}`; return; }
   snap = await r.json() as Snapshot;

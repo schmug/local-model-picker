@@ -12,7 +12,9 @@
   // run_worker_first: the Access check in worker/index.ts also guards the static page.
   "assets": { "directory": "dist/web", "binding": "ASSETS", "run_worker_first": true },
   // Set from the Access application: team domain (<team>.cloudflareaccess.com) and its AUD tag.
-  // Empty values make every request 403. Secrets (AA key, HF token) go in `wrangler secret put`.
-  "vars": { "ACCESS_TEAM_DOMAIN": "", "ACCESS_AUD": "" },
+  // Empty values make every request 403. ACCESS_SERVICE_CLIENT_ID is the Client ID (not the
+  // secret) of the calibration service token; empty disables uploads.
+  // Secrets (AA key, HF token) go in `wrangler secret put`.
+  "vars": { "ACCESS_TEAM_DOMAIN": "", "ACCESS_AUD": "", "ACCESS_SERVICE_CLIENT_ID": "" },
   "observability": { "enabled": true }
 }

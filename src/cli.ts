@@ -4,6 +4,8 @@
  *   bun src/cli.ts [--min-tps 20] [--ctx 32768] [--top 15]
  *     [--mem-gb N] [--bandwidth GBps] [--efficiency 0.4] [--authors a,b]
  *     [--scores scores.json] [--json]
+ *   bun src/cli.ts --calibrate model.gguf [--active-b 3] [--bandwidth GBps]
+ *     [--upload https://picker.cortech.online]
  *
  * Steps: hardware budget → HF candidates → fit filter → bandwidth speed
  * estimate → Artificial Analysis score → rank. Estimates only; benchmark the
@@ -16,11 +18,15 @@
  * (546 GB/s), llama-bench tg128 at Q4_K_M gave 0.31 for Qwen3.5-35B-A3B (92
  * tok/s) and 0.45 for gemma-4-26B-A4B (101 tok/s); small-active MoE models pay
  * fixed per-token overhead. Recalibrate per machine with llama-bench.
+ * --calibrate: runs `llama-bench -p 0 -n 128` on the GGUF and prints the
+ * measured efficiency; --active-b gives active params (billions) for MoE.
+ * --upload: POSTs it to the dashboard with the Access service token in
+ * ACCESS_CLIENT_ID / ACCESS_CLIENT_SECRET.
  */
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import {
-  DEFAULT_AUTHORS, appleBandwidth, candidateUrls, filterCandidates, pool, parseAaModels, plausible, rankModels,
+  DEFAULT_AUTHORS, appleBandwidth, calibrationFrom, candidateUrls, filterCandidates, parseAaModels, parseLlamaBench, plausible, pool, presetFor, rankModels,
   type AaEntry, type Candidate, type Hardware, type Options, type SnapshotModel,
 } from "./core";
 
@@ -28,7 +34,7 @@ function sh(cmd: string): string {
   try { return execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; }
 }
 
-function detectHardware(args: Map<string, string>): Hardware {
+function detectHardware(args: Map<string, string>): Hardware & { chip: string; gpuCores: number } {
   const ramBytes = Number(sh("sysctl -n hw.memsize")) || 0;
   const ramGB = ramBytes / 1e9;
   const chip = sh("sysctl -n machdep.cpu.brand_string");
@@ -38,7 +44,7 @@ function detectHardware(args: Map<string, string>): Hardware {
   const memBudgetGB = Number(args.get("mem-gb")) || (wiredMB > 0 ? (wiredMB * 1048576) / 1e9 : ramGB * (ramGB <= 36 ? 2 / 3 : 0.75));
   const bandwidthGBs = Number(args.get("bandwidth")) || appleBandwidth(chip, gpuCores);
   if (!memBudgetGB || !bandwidthGBs) throw new Error(`Unknown hardware (${chip || "non-macOS"}): pass --mem-gb and --bandwidth`);
-  return { memBudgetGB, bandwidthGBs, label: `${chip} ${gpuCores}-core GPU, ${(ramBytes / 2 ** 30).toFixed(0)} GiB RAM` };
+  return { memBudgetGB, bandwidthGBs, chip, gpuCores, label: `${chip} ${gpuCores}-core GPU, ${(ramBytes / 2 ** 30).toFixed(0)} GiB RAM` };
 }
 
 const hfHeaders: Record<string, string> = process.env.HF_TOKEN ? { authorization: `Bearer ${process.env.HF_TOKEN}` } : {};
@@ -68,9 +74,31 @@ function parseArgs(argv: string[]): Map<string, string> {
   return m;
 }
 
+async function calibrate(args: Map<string, string>, hw: ReturnType<typeof detectHardware>) {
+  const gguf = args.get("calibrate")!;
+  const bench = spawnSync("llama-bench", ["-m", gguf, "-p", "0", "-n", "128", "-o", "json"], { encoding: "utf8" });
+  if (bench.status !== 0) throw new Error(`llama-bench failed: ${bench.error?.message ?? bench.stderr.trim().split("\n").pop()}`);
+  const run = parseLlamaBench(JSON.parse(bench.stdout));
+  const active = args.has("active-b") ? Number(args.get("active-b")) * 1e9 : undefined;
+  const cal = calibrationFrom(run, presetFor(hw.chip, hw.gpuCores) ?? hw.label, hw.bandwidthGBs, active);
+  console.log(`${cal.model} on ${cal.preset}: ${cal.tps.toFixed(1)} tok/s measured → efficiency ${cal.efficiency.toFixed(3)} (pass --efficiency ${cal.efficiency.toFixed(2)})`);
+  if (!active) console.log("Dense assumed; pass --active-b for MoE models or efficiency comes out low.");
+  const url = args.get("upload");
+  if (!url) return;
+  const id = process.env.ACCESS_CLIENT_ID, secret = process.env.ACCESS_CLIENT_SECRET;
+  if (!id || !secret) throw new Error("--upload needs ACCESS_CLIENT_ID and ACCESS_CLIENT_SECRET (Access service token)");
+  const r = await fetch(new URL("/api/calibration", url), {
+    method: "POST", body: JSON.stringify(cal),
+    headers: { "content-type": "application/json", "cf-access-client-id": id, "cf-access-client-secret": secret },
+  });
+  if (!r.ok) throw new Error(`upload ${r.status}: ${await r.text()}`);
+  console.log(`uploaded to ${url}`);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const hw = detectHardware(args);
+  if (args.has("calibrate")) return calibrate(args, hw);
   const o: Options = { ctx: Number(args.get("ctx") ?? 32768), minTps: Number(args.get("min-tps") ?? 20), efficiency: Number(args.get("efficiency") ?? 0.4) };
   const top = Number(args.get("top") ?? 15);
   const authors = args.get("authors")?.split(",") ?? DEFAULT_AUTHORS;
@@ -91,7 +119,7 @@ async function main() {
   const rejects = { "too big": cands.length - fits.length + r["too big"], "too slow": r["too slow"], gated, "no config": noConfig };
   const shown = rows.slice(0, top);
 
-  if (args.has("json")) { console.log(JSON.stringify({ hw, options: o, rejects, models: shown }, null, 2)); return; }
+  if (args.has("json")) { console.log(JSON.stringify({ hw: { memBudgetGB: hw.memBudgetGB, bandwidthGBs: hw.bandwidthGBs, label: hw.label }, options: o, rejects, models: shown }, null, 2)); return; }
   console.log(`${hw.label}\nbudget ${hw.memBudgetGB.toFixed(0)} GB · ${hw.bandwidthGBs} GB/s × ${o.efficiency} · ctx ${o.ctx} · floor ${o.minTps} tok/s`);
   console.log(`${cands.length} candidates from ${authors.length} orgs · rejected: ${Object.entries(rejects).map(([k, v]) => `${v} ${k}`).join(", ")}`);
   if (!aa.length) console.log("No ARTIFICIAL_ANALYSIS_API_KEY: rows without --scores are ordered by size, NOT intelligence.");
