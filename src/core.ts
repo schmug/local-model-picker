@@ -120,19 +120,26 @@ export const DEFAULT_AUTHORS = [
 // diffusion LMs (llama.cpp / MLX can't serve them as chat models).
 export const DERIVED = /(gguf|mlx|awq|gptq|fp8|fp4|int4|int8|exl\d|bnb|-4bit|-8bit|qat|onnx|eagle|dflash|dspark|(^|[-_/])base([-_]|$)|llada|diffusion)/i;
 
-/** GB/s by chip; Max/Ultra bandwidth depends on GPU core count. */
+/** GB/s by Apple chip; Max bandwidth depends on GPU core count: [cores above which, binned, full]. */
+export const APPLE_BANDWIDTH: Record<string, number | [number, number, number]> = {
+  "M1": 68, "M1 Pro": 200, "M1 Max": 400, "M1 Ultra": 800,
+  "M2": 100, "M2 Pro": 200, "M2 Max": 400, "M2 Ultra": 800,
+  "M3": 100, "M3 Pro": 150, "M3 Max": [30, 300, 400], "M3 Ultra": 819,
+  "M4": 120, "M4 Pro": 273, "M4 Max": [32, 410, 546],
+  "M5": 153,
+};
+
 export function appleBandwidth(chip: string, gpuCores: number): number | undefined {
-  const t: Record<string, number | [number, number, number]> = {
-    "M1": 68, "M1 Pro": 200, "M1 Max": 400, "M1 Ultra": 800,
-    "M2": 100, "M2 Pro": 200, "M2 Max": 400, "M2 Ultra": 800,
-    "M3": 100, "M3 Pro": 150, "M3 Max": [30, 300, 400], "M3 Ultra": 819,
-    "M4": 120, "M4 Pro": 273, "M4 Max": [32, 410, 546],
-    "M5": 153,
-  };
-  const v = t[chip.replace(/^Apple\s+/, "").trim()];
+  const v = APPLE_BANDWIDTH[chip.replace(/^Apple\s+/, "").trim()];
   return Array.isArray(v) ? (gpuCores > v[0] ? v[2] : v[1]) : v;
 }
 
+/** Hardware presets for the page: one per chip, two for Max chips (binned and full GPU). */
+export function applePresets(): { label: string; bandwidthGBs: number }[] {
+  return Object.entries(APPLE_BANDWIDTH).flatMap(([chip, v]) => Array.isArray(v)
+    ? [{ label: `${chip} (binned GPU)`, bandwidthGBs: v[1] }, { label: `${chip} (full GPU)`, bandwidthGBs: v[2] }]
+    : [{ label: chip, bandwidthGBs: v }]);
+}
 
 // ---------- HF / AA response parsing ----------
 

@@ -4,18 +4,68 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Local model picker</title>
+<style>
+  :root { --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --accent: #2563eb; --dot: #2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161514; --fg: #f5f5f4; --muted: #a8a29e; --line: #2e2c2a; --accent: #60a5fa; --dot: #60a5fa; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .muted { color: var(--muted); }
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 20px; margin: 16px 0; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  label output { color: var(--fg); font-variant-numeric: tabular-nums; }
+  select, input[type=range] { width: 100%; }
+  figure { margin: 16px 0; position: relative; }
+  svg { width: 100%; height: auto; display: block; }
+  svg text { fill: var(--muted); font-size: 11px; }
+  svg .axis { stroke: var(--line); }
+  svg circle { fill: var(--dot); fill-opacity: 0.75; }
+  .aa-logo { position: absolute; top: 8px; right: 8px; height: 22px; }
+  figcaption { font-size: 12px; color: var(--muted); }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 12px; color: var(--muted); font-weight: 500; }
+  td.num, th.num { text-align: right; }
+  a { color: var(--accent); }
+  footer { margin-top: 24px; font-size: 12px; color: var(--muted); }
+</style>
 </head>
 <body>
-<h1>Local model picker</h1>
-<p id="status">Loading snapshot…</p>
-<script>
-  // Placeholder until the dashboard lands (plan §4.5): shows snapshot freshness only, no scores.
-  fetch("/api/snapshot").then(async (r) => {
-    const el = document.getElementById("status");
-    if (!r.ok) { el.textContent = `Snapshot: ${r.status} ${await r.text()}`; return; }
-    const s = await r.json();
-    el.textContent = `Snapshot ${s.fetchedAt}: ${s.models.length} models, ${s.gated.length} gated, ${s.errors.length} errors.`;
-  });
-</script>
+<main>
+  <h1>Local model picker</h1>
+  <p class="muted" id="status">Loading snapshot…</p>
+
+  <section class="controls">
+    <label>Hardware preset <select id="preset"></select></label>
+    <label>Memory budget <output id="mem-out"></output><input id="mem" type="range" min="8" max="512" step="1" value="103"></label>
+    <label>Bandwidth <output id="bw-out"></output><input id="bw" type="range" min="50" max="1000" step="1" value="546"></label>
+    <label>Context <select id="ctx">
+      <option value="4096">4k</option><option value="8192">8k</option><option value="16384">16k</option>
+      <option value="32768" selected>32k</option><option value="65536">64k</option><option value="131072">128k</option>
+    </select></label>
+    <label>Speed floor <output id="tps-out"></output><input id="tps" type="range" min="1" max="100" step="1" value="20"></label>
+    <label>Efficiency <output id="eff-out"></output><input id="eff" type="range" min="0.1" max="0.8" step="0.01" value="0.4"></label>
+  </section>
+
+  <figure>
+    <svg id="chart" viewBox="0 0 800 320" role="img" aria-label="Intelligence score versus estimated tokens per second"></svg>
+    <img class="aa-logo" src="aa-logo.svg" alt="Artificial Analysis" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'aa-logo muted',textContent:'Artificial Analysis'}))">
+    <figcaption>Scored models only. Source: <a href="https://artificialanalysis.ai/">Artificial Analysis (artificialanalysis.ai)</a>.</figcaption>
+  </figure>
+
+  <p class="muted" id="summary"></p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>#</th><th>Model</th><th>Params</th><th>Quant</th><th class="num">Mem GB</th><th class="num">Est tok/s</th><th class="num">Score</th><th>Released</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+
+  <footer>
+    Intelligence scores: Source: <a href="https://artificialanalysis.ai/">Artificial Analysis (artificialanalysis.ai)</a>.
+    This project is not endorsed by Artificial Analysis.
+    Speeds are bandwidth × efficiency estimates; benchmark top picks with llama-bench before trusting them.
+  </footer>
+</main>
+<script type="module" src="app.js"></script>
 </body>
 </html>

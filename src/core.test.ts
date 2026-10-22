@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  activeParams, bestPlan, calibratedEfficiency, configSubset, filterCandidates, kvCacheBytes, matchScore,
+  activeParams, appleBandwidth, applePresets, bestPlan, calibratedEfficiency, configSubset, filterCandidates, kvCacheBytes, matchScore,
   parseAaModels, rankModels, type SnapshotModel,
 } from "./core";
 
@@ -90,4 +90,11 @@ test("calibrated efficiency inverts the bandwidth estimate", () => {
   const p = bestPlan(30e9, 3e9, 2e9, m4Max, o);
   if (!("quant" in p)) throw new Error("expected a plan");
   expect(calibratedEfficiency(p.tps, m4Max.bandwidthGBs, 3e9, p.quant.bpw, 2e9)).toBeCloseTo(0.37, 10);
+});
+
+test("Apple presets: one per chip, Max chips split by GPU bin, matching appleBandwidth", () => {
+  const p = applePresets();
+  expect(p.find((x) => x.label === "M4 Max (full GPU)")?.bandwidthGBs).toBe(appleBandwidth("Apple M4 Max", 40));
+  expect(p.find((x) => x.label === "M4 Max (binned GPU)")?.bandwidthGBs).toBe(appleBandwidth("Apple M4 Max", 32));
+  expect(p.find((x) => x.label === "M4 Pro")?.bandwidthGBs).toBe(273);
 });

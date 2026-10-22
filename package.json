@@ -6,7 +6,7 @@
     "pick": "bun src/cli.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
-    "build:web": "mkdir -p dist/web && cp web/index.html dist/web/",
+    "build:web": "rm -rf dist/web && bun build web/app.ts --outdir dist/web --target browser --minify && cp web/index.html dist/web/ && (cp web/aa-logo.svg dist/web/ 2>/dev/null || true)",
     "build": "bun run build:web && wrangler deploy --dry-run --outdir dist/worker",
     "deploy": "bun run build:web && wrangler deploy"
   },
