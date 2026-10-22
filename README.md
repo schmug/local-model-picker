@@ -4,7 +4,7 @@ Which open-weight model is the smartest one that still runs fast enough on your 
 
 ```bash
 bun install
-bun src/pick-local-model.ts --min-tps 20 --ctx 32768 --top 15
+bun src/cli.ts --min-tps 20 --ctx 32768 --top 15
 ```
 
 The CLI detects your Apple Silicon memory budget and bandwidth, pulls chat models

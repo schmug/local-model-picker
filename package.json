@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "pick": "bun src/pick-local-model.ts",
+    "pick": "bun src/cli.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
