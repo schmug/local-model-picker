@@ -20,5 +20,18 @@ Artificial Analysis Intelligence Index.
 Speeds are estimates (bandwidth x efficiency 0.4, calibrated with llama-bench on
 an M4 Max). Benchmark your top picks before trusting them.
 
+## Dashboard (owner only)
+
+`worker/` runs on Cloudflare at picker.cortech.online behind Cloudflare Access.
+A daily cron crawls Hugging Face and the AA model list into KV; `GET /api/snapshot`
+serves it, and the Worker re-checks the Access assertion on every request.
+
+```bash
+bunx wrangler secret put ARTIFICIAL_ANALYSIS_API_KEY
+bunx wrangler secret put HF_TOKEN
+# fill ACCESS_TEAM_DOMAIN and ACCESS_AUD in wrangler.jsonc from the Access app, then
+bun run deploy
+```
+
 Intelligence scores: Source: [Artificial Analysis](https://artificialanalysis.ai/).
 This project is not endorsed by Artificial Analysis.

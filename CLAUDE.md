@@ -12,6 +12,8 @@ core/cli/worker/web, Worker + cron behind Cloudflare Access).
 - `bun test` — unit tests for the pure estimation functions
 - `bun run typecheck` — `tsc --noEmit`
 - `bun src/cli.ts` — the CLI; flags are documented in its header comment
+- `bun run build` — copies the page to `dist/web` and dry-runs the Worker bundle
+- `bun run deploy` — deploys the Worker to picker.cortech.online (Workers Paid)
 
 ## Invariants
 

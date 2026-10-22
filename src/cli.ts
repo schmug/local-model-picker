@@ -20,7 +20,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import {
-  DEFAULT_AUTHORS, appleBandwidth, filterCandidates, parseAaModels, plausible, rankModels,
+  DEFAULT_AUTHORS, appleBandwidth, candidateUrls, filterCandidates, pool, parseAaModels, plausible, rankModels,
   type AaEntry, type Candidate, type Hardware, type Options, type SnapshotModel,
 } from "./core";
 
@@ -48,18 +48,8 @@ async function getJson(url: string, headers = hfHeaders): Promise<any> {
   return r.json();
 }
 
-async function pool<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let i = 0;
-  await Promise.all(Array.from({ length: n }, async () => { while (i < items.length) { const j = i++; out[j] = await fn(items[j]); } }));
-  return out;
-}
-
 async function listCandidates(authors: string[]): Promise<Candidate[]> {
-  const urls = authors.flatMap((a) => ["text-generation", "image-text-to-text"].flatMap((p) =>
-    ["sort=downloads", "sort=createdAt&direction=-1"].map((s) =>
-      `https://huggingface.co/api/models?author=${a}&pipeline_tag=${p}&${s}&limit=40&expand[]=safetensors&expand[]=tags&expand[]=createdAt`)));
-  return filterCandidates(await pool(urls, 8, (u) => getJson(u).catch(() => [])));
+  return filterCandidates(await pool(candidateUrls(authors), 8, (u) => getJson(u).catch(() => [])));
 }
 
 async function aaScores(): Promise<AaEntry[]> {

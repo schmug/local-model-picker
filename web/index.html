@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local model picker</title>
+</head>
+<body>
+<h1>Local model picker</h1>
+<p id="status">Loading snapshot…</p>
+<script>
+  // Placeholder until the dashboard lands (plan §4.5): shows snapshot freshness only, no scores.
+  fetch("/api/snapshot").then(async (r) => {
+    const el = document.getElementById("status");
+    if (!r.ok) { el.textContent = `Snapshot: ${r.status} ${await r.text()}`; return; }
+    const s = await r.json();
+    el.textContent = `Snapshot ${s.fetchedAt}: ${s.models.length} models, ${s.gated.length} gated, ${s.errors.length} errors.`;
+  });
+</script>
+</body>
+</html>

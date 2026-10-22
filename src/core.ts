@@ -138,6 +138,21 @@ export function appleBandwidth(chip: string, gpuCores: number): number | undefin
 
 export interface Candidate { id: string; total: number; created: string }
 
+/** HF `/api/models` listing URLs: per org, chat and VLM pipelines, top downloads and newest. */
+export function candidateUrls(authors: string[]): string[] {
+  return authors.flatMap((a) => ["text-generation", "image-text-to-text"].flatMap((p) =>
+    ["sort=downloads", "sort=createdAt&direction=-1"].map((s) =>
+      `https://huggingface.co/api/models?author=${a}&pipeline_tag=${p}&${s}&limit=40&expand[]=safetensors&expand[]=tags&expand[]=createdAt`)));
+}
+
+/** Map with at most `n` calls of `fn` in flight; keeps input order. */
+export async function pool<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let i = 0;
+  await Promise.all(Array.from({ length: n }, async () => { while (i < items.length) { const j = i++; out[j] = await fn(items[j]); } }));
+  return out;
+}
+
 /** Chat models from HF `/api/models` pages: dedupe, drop derived and adapter/merge repos. */
 export function filterCandidates(pages: any[][]): Candidate[] {
   const seen = new Map<string, Candidate>();
