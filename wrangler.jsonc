@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "local-model-picker",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  // Only reachable through the Access-gated custom domain.
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "picker.cortech.online", "custom_domain": true }],
+  "triggers": { "crons": ["17 6 * * *"] },
+  "kv_namespaces": [{ "binding": "SNAPSHOT", "id": "c4574070c4114de6b3c044e81213df07" }],
+  // run_worker_first: the Access check in worker/index.ts also guards the static page.
+  "assets": { "directory": "dist/web", "binding": "ASSETS", "run_worker_first": true },
+  // Set from the Access application: team domain (<team>.cloudflareaccess.com) and its AUD tag.
+  // Empty values make every request 403. ACCESS_SERVICE_CLIENT_ID is the Client ID (not the
+  // secret) of the calibration service token; empty disables uploads.
+  // Secrets (AA key, HF token) go in `wrangler secret put`.
+  "vars": { "ACCESS_TEAM_DOMAIN": "", "ACCESS_AUD": "", "ACCESS_SERVICE_CLIENT_ID": "" },
+  "observability": { "enabled": true }
+}
